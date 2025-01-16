@@ -1,3 +1,9 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from main import Film, Room, Reservation, Base, book_seat
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -43,6 +49,31 @@ def test_overbooking(setup_database):
     assert result == False  # La prenotazione dovrebbe fallire, perché il posto è già prenotato
 
     # Verifica che il posto non sia stato prenotato di nuovo
+    reservation = session.query(Reservation).filter_by(film_id=film_id, seat_number=5).first()
+    assert reservation is not None
+    assert reservation.is_booked == True
+
+from concurrent.futures import ThreadPoolExecutor
+
+def test_concurrency(setup_database):
+    session, film_id = setup_database
+
+    # Funzione di prova per prenotare il posto
+    def attempt_booking():
+        return book_seat(film_id, 5)
+
+    # Esegui 10 richieste concorrenti per prenotare lo stesso posto
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(attempt_booking, range(10)))
+
+    # Verifica che solo una prenotazione sia riuscita
+    success_count = results.count(True)
+    failure_count = results.count(False)
+
+    assert success_count == 1  # Solo 1 prenotazione dovrebbe essere riuscita
+    assert failure_count == 9  # Le altre dovrebbero fallire
+
+    # Verifica che il posto 5 sia effettivamente prenotato
     reservation = session.query(Reservation).filter_by(film_id=film_id, seat_number=5).first()
     assert reservation is not None
     assert reservation.is_booked == True
